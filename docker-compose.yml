@@ -1,0 +1,17 @@
+
+services:
+  axon-web:
+    image: node:20-alpine
+    container_name: axon-web-dev
+    working_dir: /app
+    # Mapeamos el código local al contenedor para que el Live-Reload funcione (HMR)
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    ports:
+      # Puerto por defecto de Vite
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+    # Instala dependencias y levanta el servidor escuchando en todas las interfaces de red (--host)
+    command: sh -c "npm install && npm run dev -- --host"
