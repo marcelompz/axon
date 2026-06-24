@@ -264,6 +264,24 @@ body {
 }
 
 /* Menu Popover */
+.block-checkbox {
+  margin-right: 8px;
+  margin-top: 6px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-color);
+  cursor: pointer;
+}
+
+.block-row.type-checkbox {
+  align-items: flex-start;
+}
+
+.checked-text {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+}
+
 .slash-menu {
   position: absolute;
   background: white;

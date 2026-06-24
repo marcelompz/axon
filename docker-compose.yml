@@ -15,3 +15,17 @@ services:
       - NODE_ENV=development
     # Instala dependencias y levanta el servidor escuchando en todas las interfaces de red (--host)
     command: sh -c "npm install && npm run dev -- --host"
+
+  couchdb:
+    image: couchdb:3.3
+    container_name: axon-couchdb
+    ports:
+      - "5984:5984"
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=password
+    volumes:
+      - couchdb-data:/opt/couchdb/data
+
+volumes:
+  couchdb-data:

@@ -1,18 +1,105 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import PouchDB from 'pouchdb';
+
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'bullet';
+type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'bullet' | 'checkbox';
 
 interface Block {
   id: string;
   type: BlockType;
   content: string;
+  checked?: boolean;
 }
 
 interface Page {
   id: string;
   title: string;
   icon: string;
+}
+
+// Setup DB globally
+const localDB = new PouchDB('axon');
+const remoteDB = new PouchDB('http://admin:password@localhost:5984/axon');
+
+// Start synchronization
+localDB.sync(remoteDB, {
+  live: true,
+  retry: true
+}).on('error', function (err) {
+  console.log('Sync error', err);
+});
+
+// Helper Hook for PouchDB Documents
+function usePouchDB<T>(docId: string, initialValue: T) {
+  const [data, setData] = useState<T>(initialValue);
+  const [rev, setRev] = useState<string | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadData = async () => {
+      try {
+        const doc = await localDB.get(docId);
+        if (active) {
+          setData((doc as any).data);
+          setRev(doc._rev);
+          setLoading(false);
+        }
+      } catch (err: any) {
+        if (err.name === 'not_found' && active) {
+          try {
+            const res = await localDB.put({ _id: docId, data: initialValue });
+            setRev(res.rev);
+          } catch (e) {}
+          setLoading(false);
+        }
+      }
+    };
+
+    loadData();
+
+    const changes = localDB.changes({
+      since: 'now',
+      live: true,
+      include_docs: true,
+      doc_ids: [docId]
+    }).on('change', (change) => {
+      if (active) {
+        setData((change.doc as any).data);
+        setRev(change.doc._rev);
+      }
+    });
+
+    return () => {
+      active = false;
+      changes.cancel();
+    };
+  }, [docId]);
+
+  const saveData = async (newData: T) => {
+    setData(newData);
+    try {
+      const currentDoc = await localDB.get(docId).catch(() => null);
+      if (currentDoc) {
+        const res = await localDB.put({ ...currentDoc, data: newData });
+        setRev(res.rev);
+      } else {
+        const res = await localDB.put({ _id: docId, data: newData });
+        setRev(res.rev);
+      }
+    } catch (err: any) {
+      if (err.name === 'conflict') {
+        // Optimistic retry
+        const latestDoc = await localDB.get(docId);
+        const res = await localDB.put({ ...latestDoc, data: newData });
+        setRev(res.rev);
+      }
+    }
+  };
+
+  return [data, saveData, loading] as const;
 }
 
 // SVG Icons
@@ -22,7 +109,7 @@ const TextIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="non
 const Heading1Icon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12h8"></path><path d="M4 18V6"></path><path d="M12 18V6"></path><path d="M17 12h4"></path><path d="M21 18V6"></path></svg>;
 const BulletIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>;
 const TrashIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
-
+const CheckSquareIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>;
 
 interface ContentEditableBlockProps {
   block: Block;
@@ -30,15 +117,16 @@ interface ContentEditableBlockProps {
   onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onInput: (e: React.FormEvent<HTMLDivElement>) => void;
   onBlur: () => void;
+  className?: string;
 }
 
-const ContentEditableBlock = React.memo(({ block, innerRef, onKeyDown, onInput, onBlur }: ContentEditableBlockProps) => {
+const ContentEditableBlock = React.memo(({ block, innerRef, onKeyDown, onInput, onBlur, className }: ContentEditableBlockProps) => {
   const contentRef = useRef(block.content);
 
   return (
     <div 
       ref={innerRef}
-      className="block-content"
+      className={`block-content ${className || ''}`}
       contentEditable
       suppressContentEditableWarning
       data-type={block.type}
@@ -54,25 +142,15 @@ const ContentEditableBlock = React.memo(({ block, innerRef, onKeyDown, onInput, 
     </div>
   );
 }, (prevProps, nextProps) => {
-  return prevProps.block.type === nextProps.block.type && prevProps.block.id === nextProps.block.id;
+  return prevProps.block.type === nextProps.block.type && prevProps.block.id === nextProps.block.id && prevProps.className === nextProps.className;
 });
 
 function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string, updates: Partial<Page>) => void }) {
-  const [blocks, setBlocks] = useState<Block[]>(() => {
-    const saved = localStorage.getItem(`axon-blocks-${page.id}`);
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    return [{ id: generateId(), type: 'paragraph', content: '' }];
-  });
+  const [blocks, setBlocks, loading] = usePouchDB<Block[]>(`axon-blocks-${page.id}`, [{ id: generateId(), type: 'paragraph', content: '' }]);
   
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
 
-  useEffect(() => {
-    localStorage.setItem(`axon-blocks-${page.id}`, JSON.stringify(blocks));
-  }, [blocks, page.id]);
-  
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashMenuPos, setSlashMenuPos] = useState({ top: 0, left: 0 });
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
@@ -87,20 +165,21 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
 
   const MENU_ITEMS = [
     { type: 'paragraph', title: 'Texto', desc: 'Comienza a escribir con texto plano.', icon: <TextIcon /> },
+    { type: 'checkbox', title: 'Lista de tareas', desc: 'Realiza un seguimiento de las tareas con una casilla.', icon: <CheckSquareIcon /> },
     { type: 'h1', title: 'Título 1', desc: 'Título de sección grande.', icon: <Heading1Icon /> },
     { type: 'h2', title: 'Título 2', desc: 'Título de sección mediano.', icon: <Heading1Icon /> },
     { type: 'h3', title: 'Título 3', desc: 'Título de sección pequeño.', icon: <Heading1Icon /> },
     { type: 'bullet', title: 'Lista de viñetas', desc: 'Crea una lista con viñetas simple.', icon: <BulletIcon /> },
   ] as const;
 
-  const updateBlock = (id: string, newContent: string) => {
-    setBlocks(blocksRef.current.map(b => b.id === id ? { ...b, content: newContent } : b));
+  const updateBlock = (id: string, newContent: string, updates: Partial<Block> = {}) => {
+    setBlocks(blocksRef.current.map(b => b.id === id ? { ...b, content: newContent, ...updates } : b));
   };
 
-  const addBlockAfter = (id: string) => {
+  const addBlockAfter = (id: string, newType: BlockType = 'paragraph') => {
     const currentBlocks = blocksRef.current;
     const index = currentBlocks.findIndex(b => b.id === id);
-    const newBlock: Block = { id: generateId(), type: 'paragraph', content: '' };
+    const newBlock: Block = { id: generateId(), type: newType, content: '' };
     const newBlocks = [...currentBlocks];
     newBlocks.splice(index + 1, 0, newBlock);
     setBlocks(newBlocks);
@@ -157,7 +236,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
   const applyBlockType = (type: BlockType) => {
     if (!currentBlockId) return;
     
-    setBlocks(blocksRef.current.map(b => b.id === currentBlockId ? { ...b, type, content: '' } : b));
+    setBlocks(blocksRef.current.map(b => b.id === currentBlockId ? { ...b, type, content: '', checked: false } : b));
     closeSlashMenu();
     
     setTimeout(() => {
@@ -194,6 +273,21 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      const target = e.target as HTMLDivElement;
+      const block = blocksRef.current.find(b => b.id === id);
+      
+      if (block && (block.type === 'bullet' || block.type === 'checkbox')) {
+        if (target.textContent === '') {
+          // Si la lista está vacía y presionas Enter, vuelve a ser un párrafo normal
+          setBlocks(blocksRef.current.map(b => b.id === id ? { ...b, type: 'paragraph', checked: false } : b));
+          return;
+        } else {
+          // Si tiene texto, continúa la lista con el mismo tipo
+          addBlockAfter(id, block.type);
+          return;
+        }
+      }
+      
       addBlockAfter(id);
     } else if (e.key === 'Backspace') {
       const target = e.target as HTMLDivElement;
@@ -201,7 +295,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
         e.preventDefault();
         const block = blocksRef.current.find(b => b.id === id);
         if (block && block.type !== 'paragraph') {
-          setBlocks(blocksRef.current.map(b => b.id === id ? { ...b, type: 'paragraph' } : b));
+          setBlocks(blocksRef.current.map(b => b.id === id ? { ...b, type: 'paragraph', checked: false } : b));
         } else {
           removeBlock(id);
         }
@@ -218,6 +312,8 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
     updateBlock(id, text);
     if (!text.includes('/')) closeSlashMenu();
   };
+
+  if (loading) return null;
 
   return (
     <main className="main-content">
@@ -249,7 +345,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
           {blocks.map((block) => (
             <div 
               key={block.id} 
-              className={`block-row group ${draggedId === block.id ? 'dragging' : ''} ${dragOverId === block.id ? `drag-over-${dragOverPosition}` : ''}`}
+              className={`block-row group ${draggedId === block.id ? 'dragging' : ''} ${dragOverId === block.id ? `drag-over-${dragOverPosition}` : ''} type-${block.type}`}
               draggable={dragEnabledId === block.id}
               onDragStart={(e) => {
                 setDraggedId(block.id);
@@ -307,8 +403,18 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
                 </button>
               </div>
               
+              {block.type === 'checkbox' && (
+                <input 
+                  type="checkbox" 
+                  className="block-checkbox"
+                  checked={block.checked || false} 
+                  onChange={(e) => updateBlock(block.id, block.content, { checked: e.target.checked })} 
+                />
+              )}
+
               <ContentEditableBlock
                 block={block}
+                className={block.type === 'checkbox' && block.checked ? 'checked-text' : ''}
                 innerRef={el => blockRefs.current[block.id] = el}
                 onKeyDown={(e) => handleKeyDown(e, block.id)}
                 onInput={(e) => handleInput(e, block.id)}
@@ -344,34 +450,41 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
   );
 }
 
+// Initial LocalStorage Migration to PouchDB for Pages
+const migratePages = async () => {
+  try {
+    await localDB.get('axon-pages');
+  } catch (e: any) {
+    if (e.name === 'not_found') {
+      const localPages = localStorage.getItem('axon-pages');
+      const defaultPage = { id: 'page-default', title: 'Mi Primera Página', icon: '🚀' };
+      
+      let pages = localPages ? JSON.parse(localPages) : [defaultPage];
+      await localDB.put({ _id: 'axon-pages', data: pages });
+      
+      if (!localPages) {
+        const localBlocks = localStorage.getItem('axon-blocks-page-default');
+        if (localBlocks) {
+          await localDB.put({ _id: 'axon-blocks-page-default', data: JSON.parse(localBlocks) });
+        }
+      }
+    }
+  }
+};
+migratePages();
+
 function App() {
-  const [pages, setPages] = useState<Page[]>(() => {
-    const saved = localStorage.getItem('axon-pages');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    
-    // Migración transparente si venían de la versión de 1 sola página
-    const oldTitle = localStorage.getItem('axon-title');
-    const oldBlocks = localStorage.getItem('axon-blocks');
-    const defaultPage: Page = { id: 'page-default', title: oldTitle || 'Mi Primera Página', icon: '🚀' };
-    
-    if (oldBlocks) {
-      localStorage.setItem(`axon-blocks-page-default`, oldBlocks);
-      localStorage.removeItem('axon-blocks');
-      localStorage.removeItem('axon-title');
-    }
-    
-    return [defaultPage];
-  });
+  const [pages, setPages, loading] = usePouchDB<Page[]>('axon-pages', [{ id: 'page-default', title: 'Mi Primera Página', icon: '🚀' }]);
 
   const [currentPageId, setCurrentPageId] = useState<string>(() => {
-    return localStorage.getItem('axon-current-page') || pages[0]?.id || 'page-default';
+    return localStorage.getItem('axon-current-page') || 'page-default';
   });
 
   useEffect(() => {
-    localStorage.setItem('axon-pages', JSON.stringify(pages));
-  }, [pages]);
+    if (!loading && pages.length > 0 && !pages.find(p => p.id === currentPageId)) {
+      setCurrentPageId(pages[0].id);
+    }
+  }, [pages, loading, currentPageId]);
 
   useEffect(() => {
     localStorage.setItem('axon-current-page', currentPageId);
@@ -387,20 +500,21 @@ function App() {
     setCurrentPageId(newPage.id);
   };
 
-  const handleDeletePage = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation(); // Evitar que seleccione la página al hacer click en borrar
-    if (pages.length === 1) return; // No borrar la última
+  const handleDeletePage = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (pages.length === 1) return;
     
     const newPages = pages.filter(p => p.id !== id);
     setPages(newPages);
     
-    // Si borramos la que estaba activa, cambiar a otra
     if (currentPageId === id) {
       setCurrentPageId(newPages[0].id);
     }
     
-    // Limpiar bloques huérfanos
-    localStorage.removeItem(`axon-blocks-${id}`);
+    try {
+      const doc = await localDB.get(`axon-blocks-${id}`);
+      await localDB.remove(doc);
+    } catch (err) {}
   };
 
   const currentPage = pages.find(p => p.id === currentPageId) || pages[0];
@@ -447,8 +561,7 @@ function App() {
         </div>
       </aside>
 
-      {/* Editor component with key to completely unmount and remount state when switching pages */}
-      {currentPage && (
+      {currentPage && !loading && (
         <Editor 
           key={currentPage.id} 
           page={currentPage} 
