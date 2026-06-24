@@ -1,5 +1,4 @@
-import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
-
+import React, { useState, useRef, useEffect } from 'react';
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'bullet';
@@ -23,7 +22,6 @@ const TextIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="non
 const Heading1Icon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12h8"></path><path d="M4 18V6"></path><path d="M12 18V6"></path><path d="M17 12h4"></path><path d="M21 18V6"></path></svg>;
 const BulletIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>;
 const TrashIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
-const FileIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>;
 
 
 interface ContentEditableBlockProps {
@@ -138,7 +136,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
     }
   };
 
-  const openSlashMenu = (e: React.KeyboardEvent | React.ChangeEvent, id: string) => {
+  const openSlashMenu = (id: string) => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
     
@@ -171,7 +169,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
     }, 0);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>, id: string) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, id: string) => {
     if (slashMenuOpen) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -209,7 +207,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
         }
       }
     } else if (e.key === '/') {
-      openSlashMenu(e, id);
+      openSlashMenu(id);
     } else if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && slashMenuOpen) {
       if (e.key === ' ') closeSlashMenu();
     }
