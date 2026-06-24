@@ -140,6 +140,18 @@ body {
   .mobile-toolbar {
     display: flex;
   }
+  .editor-wrapper {
+    padding: 0 16px; /* Reducir padding lateral en móviles */
+  }
+  .page-title {
+    font-size: 32px; /* Reducir tamaño de título en móviles */
+    margin-bottom: 16px;
+  }
+  .page-icon-wrapper {
+    font-size: 48px; /* Reducir tamaño de ícono en móviles */
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
 }
 
 .sidebar-header:hover {
