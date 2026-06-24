@@ -110,6 +110,7 @@ const Heading1Icon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill=
 const BulletIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>;
 const TrashIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
 const CheckSquareIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>;
+const MenuIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>;
 
 interface ContentEditableBlockProps {
   block: Block;
@@ -117,10 +118,11 @@ interface ContentEditableBlockProps {
   onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   onInput: (e: React.FormEvent<HTMLDivElement>) => void;
   onBlur: () => void;
+  onFocus: () => void;
   className?: string;
 }
 
-const ContentEditableBlock = React.memo(({ block, innerRef, onKeyDown, onInput, onBlur, className }: ContentEditableBlockProps) => {
+const ContentEditableBlock = React.memo(({ block, innerRef, onKeyDown, onInput, onBlur, onFocus, className }: ContentEditableBlockProps) => {
   const contentRef = useRef(block.content);
 
   return (
@@ -137,6 +139,7 @@ const ContentEditableBlock = React.memo(({ block, innerRef, onKeyDown, onInput, 
         onInput(e);
       }}
       onBlur={onBlur}
+      onFocus={onFocus}
     >
       {contentRef.current}
     </div>
@@ -145,7 +148,7 @@ const ContentEditableBlock = React.memo(({ block, innerRef, onKeyDown, onInput, 
   return prevProps.block.type === nextProps.block.type && prevProps.block.id === nextProps.block.id && prevProps.className === nextProps.className;
 });
 
-function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string, updates: Partial<Page>) => void }) {
+function Editor({ page, onUpdatePage, onOpenMenu }: { page: Page, onUpdatePage: (id: string, updates: Partial<Page>) => void, onOpenMenu: () => void }) {
   const [blocks, setBlocks, loading] = usePouchDB<Block[]>(`axon-blocks-${page.id}`, [{ id: generateId(), type: 'paragraph', content: '' }]);
   
   const blocksRef = useRef(blocks);
@@ -155,6 +158,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
   const [slashMenuPos, setSlashMenuPos] = useState({ top: 0, left: 0 });
   const [slashMenuIndex, setSlashMenuIndex] = useState(0);
   const [currentBlockId, setCurrentBlockId] = useState<string | null>(null);
+  const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
 
   const [dragEnabledId, setDragEnabledId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -248,6 +252,11 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
     }, 0);
   };
 
+  const applyBlockTypeToFocused = (type: BlockType) => {
+    if (!focusedBlockId) return;
+    setBlocks(blocksRef.current.map(b => b.id === focusedBlockId ? { ...b, type, checked: false } : b));
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, id: string) => {
     if (slashMenuOpen) {
       if (e.key === 'ArrowDown') {
@@ -318,6 +327,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
   return (
     <main className="main-content">
       <div className="top-nav">
+        <button className="mobile-menu-btn" onClick={onOpenMenu}><MenuIcon /></button>
         <span>Axon Workspace / {page.title || 'Sin título'}</span>
       </div>
       
@@ -418,6 +428,7 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
                 innerRef={el => blockRefs.current[block.id] = el}
                 onKeyDown={(e) => handleKeyDown(e, block.id)}
                 onInput={(e) => handleInput(e, block.id)}
+                onFocus={() => setFocusedBlockId(block.id)}
                 onBlur={() => {
                   setTimeout(closeSlashMenu, 200);
                 }}
@@ -425,6 +436,29 @@ function Editor({ page, onUpdatePage }: { page: Page, onUpdatePage: (id: string,
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="mobile-toolbar">
+        <button className="toolbar-btn" onClick={() => applyBlockTypeToFocused('checkbox')}>
+          <CheckSquareIcon />
+          <span>Tarea</span>
+        </button>
+        <button className="toolbar-btn" onClick={() => applyBlockTypeToFocused('h1')}>
+          <Heading1Icon />
+          <span>Título</span>
+        </button>
+        <button className="toolbar-btn" onClick={() => applyBlockTypeToFocused('bullet')}>
+          <BulletIcon />
+          <span>Lista</span>
+        </button>
+        <button className="toolbar-btn" onClick={() => {
+           const newId = generateId();
+           setBlocks([...blocksRef.current, { id: newId, type: 'paragraph', content: '' }]);
+           setTimeout(() => blockRefs.current[newId]?.focus(), 0);
+        }}>
+          <PlusIcon />
+          <span>Texto</span>
+        </button>
       </div>
 
       {slashMenuOpen && (
@@ -474,6 +508,7 @@ const migratePages = async () => {
 migratePages();
 
 function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pages, setPages, loading] = usePouchDB<Page[]>('axon-pages', [{ id: 'page-default', title: 'Mi Primera Página', icon: '🚀' }]);
 
   const [currentPageId, setCurrentPageId] = useState<string>(() => {
@@ -521,7 +556,9 @@ function App() {
 
   return (
     <div className="app-container">
-      <aside className="sidebar">
+      <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)}></div>
+      
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div style={{ width: 20, height: 20, background: 'var(--accent-color)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: 12 }}>A</div>
           <span>Axon Workspace</span>
@@ -536,7 +573,10 @@ function App() {
             <div 
               key={page.id}
               className={`sidebar-item ${currentPageId === page.id ? 'active' : ''}`}
-              onClick={() => setCurrentPageId(page.id)}
+              onClick={() => {
+                setCurrentPageId(page.id);
+                setSidebarOpen(false);
+              }}
             >
               <span>{page.icon}</span>
               <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -566,6 +606,7 @@ function App() {
           key={currentPage.id} 
           page={currentPage} 
           onUpdatePage={handleUpdatePage} 
+          onOpenMenu={() => setSidebarOpen(true)}
         />
       )}
     </div>
