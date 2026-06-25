@@ -3,7 +3,7 @@ import PouchDB from 'pouchdb';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'bullet' | 'checkbox';
+type BlockType = 'paragraph' | 'h1' | 'h2' | 'h3' | 'bullet' | 'checkbox' | 'image';
 
 interface Block {
   id: string;
@@ -111,6 +111,7 @@ const BulletIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="n
 const TrashIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>;
 const CheckSquareIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>;
 const MenuIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>;
+const ImageIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>;
 
 interface ContentEditableBlockProps {
   block: Block;
@@ -167,6 +168,8 @@ function Editor({ page, onUpdatePage, onOpenMenu }: { page: Page, onUpdatePage: 
 
   const blockRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const MENU_ITEMS = [
     { type: 'paragraph', title: 'Texto', desc: 'Comienza a escribir con texto plano.', icon: <TextIcon /> },
     { type: 'checkbox', title: 'Lista de tareas', desc: 'Realiza un seguimiento de las tareas con una casilla.', icon: <CheckSquareIcon /> },
@@ -174,7 +177,45 @@ function Editor({ page, onUpdatePage, onOpenMenu }: { page: Page, onUpdatePage: 
     { type: 'h2', title: 'Título 2', desc: 'Título de sección mediano.', icon: <Heading1Icon /> },
     { type: 'h3', title: 'Título 3', desc: 'Título de sección pequeño.', icon: <Heading1Icon /> },
     { type: 'bullet', title: 'Lista de viñetas', desc: 'Crea una lista con viñetas simple.', icon: <BulletIcon /> },
+    { type: 'image', title: 'Imagen (WebP)', desc: 'Sube una imagen. Se comprimirá automáticamente.', icon: <ImageIcon /> },
   ] as const;
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentBlockId) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const MAX_WIDTH = 1200;
+        
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        
+        // ¡Aquí ocurre la magia de WebP! Calidad 80%
+        const webpDataUrl = canvas.toDataURL('image/webp', 0.8);
+        
+        updateBlock(currentBlockId, webpDataUrl, { type: 'image' });
+        addBlockAfter(currentBlockId, 'paragraph');
+        closeSlashMenu();
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    // Limpiar input
+    e.target.value = '';
+  };
 
   const updateBlock = (id: string, newContent: string, updates: Partial<Block> = {}) => {
     setBlocks(blocksRef.current.map(b => b.id === id ? { ...b, content: newContent, ...updates } : b));
@@ -240,6 +281,11 @@ function Editor({ page, onUpdatePage, onOpenMenu }: { page: Page, onUpdatePage: 
   const applyBlockType = (type: BlockType) => {
     if (!currentBlockId) return;
     
+    if (type === 'image') {
+      fileInputRef.current?.click();
+      return;
+    }
+    
     setBlocks(blocksRef.current.map(b => b.id === currentBlockId ? { ...b, type, content: '', checked: false } : b));
     closeSlashMenu();
     
@@ -303,7 +349,7 @@ function Editor({ page, onUpdatePage, onOpenMenu }: { page: Page, onUpdatePage: 
       if (target.textContent === '') {
         e.preventDefault();
         const block = blocksRef.current.find(b => b.id === id);
-        if (block && block.type !== 'paragraph') {
+        if (block && block.type !== 'paragraph' && block.type !== 'image') {
           setBlocks(blocksRef.current.map(b => b.id === id ? { ...b, type: 'paragraph', checked: false } : b));
         } else {
           removeBlock(id);
@@ -326,6 +372,13 @@ function Editor({ page, onUpdatePage, onOpenMenu }: { page: Page, onUpdatePage: 
 
   return (
     <main className="main-content">
+      <input 
+        type="file" 
+        accept="image/*" 
+        style={{ display: 'none' }} 
+        ref={fileInputRef} 
+        onChange={handleFileUpload} 
+      />
       <div className="top-nav">
         <button className="mobile-menu-btn" onClick={onOpenMenu}><MenuIcon /></button>
         <span>Axon Workspace / {page.title || 'Sin título'}</span>
@@ -422,17 +475,27 @@ function Editor({ page, onUpdatePage, onOpenMenu }: { page: Page, onUpdatePage: 
                 />
               )}
 
-              <ContentEditableBlock
-                block={block}
-                className={block.type === 'checkbox' && block.checked ? 'checked-text' : ''}
-                innerRef={el => blockRefs.current[block.id] = el}
-                onKeyDown={(e) => handleKeyDown(e, block.id)}
-                onInput={(e) => handleInput(e, block.id)}
-                onFocus={() => setFocusedBlockId(block.id)}
-                onBlur={() => {
-                  setTimeout(closeSlashMenu, 200);
-                }}
-              />
+              {block.type === 'image' ? (
+                <div className="block-image-container">
+                  {block.content ? (
+                    <img src={block.content} alt="Bloque de imagen" className="block-image" />
+                  ) : (
+                    <div className="image-placeholder">Seleccionando imagen...</div>
+                  )}
+                </div>
+              ) : (
+                <ContentEditableBlock
+                  block={block}
+                  className={block.type === 'checkbox' && block.checked ? 'checked-text' : ''}
+                  innerRef={el => blockRefs.current[block.id] = el}
+                  onKeyDown={(e) => handleKeyDown(e, block.id)}
+                  onInput={(e) => handleInput(e, block.id)}
+                  onFocus={() => setFocusedBlockId(block.id)}
+                  onBlur={() => {
+                    setTimeout(closeSlashMenu, 200);
+                  }}
+                />
+              )}
             </div>
           ))}
         </div>
