@@ -208,7 +208,6 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
 
 export default function App() {
   const [pages, setPages] = useState<any[]>([]);
-  const [syncStatus, setSyncStatus] = useState('Conectado');
   const [selectedPage, setSelectedPage] = useState<any>(null);
 
   useEffect(() => {

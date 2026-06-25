@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, KeyboardEvent } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import PouchDB from 'pouchdb';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -33,7 +33,7 @@ localDB.sync(remoteDB, {
 // Helper Hook for PouchDB Documents
 function usePouchDB<T>(docId: string, initialValue: T) {
   const [data, setData] = useState<T>(initialValue);
-  const [rev, setRev] = useState<string | undefined>(undefined);
+  const [, setRev] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,7 +52,7 @@ function usePouchDB<T>(docId: string, initialValue: T) {
           try {
             const res = await localDB.put({ _id: docId, data: initialValue });
             setRev(res.rev);
-          } catch (e) {}
+          } catch { }
           setLoading(false);
         }
       }
@@ -66,7 +66,7 @@ function usePouchDB<T>(docId: string, initialValue: T) {
       include_docs: true,
       doc_ids: [docId]
     }).on('change', (change) => {
-      if (active) {
+      if (active && change.doc) {
         setData((change.doc as any).data);
         setRev(change.doc._rev);
       }
@@ -76,7 +76,7 @@ function usePouchDB<T>(docId: string, initialValue: T) {
       active = false;
       changes.cancel();
     };
-  }, [docId]);
+  }, [docId, initialValue]);
 
   const saveData = async (newData: T) => {
     setData(newData);
@@ -612,7 +612,7 @@ function App() {
     try {
       const doc = await localDB.get(`axon-blocks-${id}`);
       await localDB.remove(doc);
-    } catch (err) {}
+    } catch { }
   };
 
   const currentPage = pages.find(p => p.id === currentPageId) || pages[0];
