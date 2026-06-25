@@ -6,6 +6,8 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 ### Added
+- **Menú Móvil "Slash":** Interfaz superpuesta horizontal (scroll nativo) en la app móvil que aparece al teclear `/` para cambiar rápidamente entre tipos de bloque (Títulos, Listas, Tareas).
+- **Interacción Nativa:** Las tareas (checkboxes) ahora son interactivas en el entorno móvil, pudiendo marcar/desmarcarse con retroalimentación visual inmediata.
 - **Renderizado Móvil:** Navegación bidireccional entre la lista de páginas y la edición nativa de bloques (`TextInput`) en React Native.
 - **Compresión WebP:** Lógica de compresión de imágenes al lado del cliente usando Canvas (`image/webp`) ahorrando uso intensivo de la base local y red.
 - **Plan Maestro:** Bitácora viva en `docs/plan_maestro.md` documentando las metas del proyecto (como dictado por voz y calendario).
