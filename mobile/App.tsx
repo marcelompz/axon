@@ -9,11 +9,11 @@ import { StyleSheet, Text, View, ScrollView } from 'react-native';
 import { useState, useEffect } from 'react';
 
 import PouchDB from 'pouchdb-core';
-import AsyncStorageAdapter from 'pouchdb-adapter-asyncstorage';
+import MemoryAdapter from 'pouchdb-adapter-memory';
 import HttpPouch from 'pouchdb-adapter-http';
 import replication from 'pouchdb-replication';
 
-PouchDB.plugin(AsyncStorageAdapter)
+PouchDB.plugin(MemoryAdapter)
        .plugin(HttpPouch)
        .plugin(replication);
 
@@ -27,8 +27,8 @@ export default function App() {
   useEffect(() => {
     let active = true;
     
-    // Crear la base local en AsyncStorage
-    const localDB = new PouchDB('axon', { adapter: 'asyncstorage' });
+    // Crear la base local en memoria (para evitar errores nativos en esta fase)
+    const localDB = new PouchDB('axon', { adapter: 'memory' });
     const remoteDB = new PouchDB(REMOTE_URL);
 
     // Iniciar Sincronización

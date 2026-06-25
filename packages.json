@@ -21,7 +21,7 @@
       "path": "./mobile",
       "version": "0.1.0",
       "type": "react-native-expo",
-      "sdk": "56.0.0",
+      "sdk": "54.0.0",
       "platforms": [
         "ios",
         "android"
