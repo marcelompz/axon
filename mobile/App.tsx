@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
+import * as Calendar from 'expo-calendar';
 
 import PouchDB from 'pouchdb-core';
 import HttpPouch from 'pouchdb-adapter-http';
@@ -127,6 +128,55 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
     saveBlocks(newBlocks);
   };
 
+  const scheduleBlockToCalendar = async (id: string) => {
+    const block = blocks.find(b => b.id === id);
+    if (!block) return;
+
+    try {
+      const { status } = await Calendar.requestCalendarPermissionsAsync();
+      if (status !== 'granted') {
+        alert('Se requieren permisos de calendario para agendar tareas.');
+        return;
+      }
+
+      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+      const defaultCalendar = calendars.find(c => c.allowsModifications) || calendars[0];
+
+      if (!defaultCalendar) {
+        alert('No tienes calendarios configurados en tu dispositivo.');
+        return;
+      }
+
+      const cleanTitle = block.content.replace(/\/$/, '').trim() || "Nueva Tarea de Axon";
+      
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setHours(startDate.getHours() + 1);
+
+      const eventId = await Calendar.createEventAsync(defaultCalendar.id, {
+        title: cleanTitle,
+        startDate,
+        endDate,
+        allDay: true,
+        notes: "Creado desde Axon Workspace"
+      });
+
+      const newBlocks = blocks.map(b => b.id === id ? { 
+        ...b, 
+        type: 'checkbox', 
+        content: cleanTitle, 
+        eventId 
+      } : b);
+      
+      saveBlocks(newBlocks);
+      setSlashMenuId(null);
+      
+    } catch (err) {
+      console.error("Error agendando", err);
+      alert('Hubo un error al sincronizar con tu calendario.');
+    }
+  };
+
   const changeBlockType = (id: string, type: string) => {
     // Quitamos la barra "/" final al cambiar el tipo
     const newBlocks = blocks.map(b => b.id === id ? { ...b, type, content: b.content.replace(/\/$/, '') } : b);
@@ -134,7 +184,28 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
     setSlashMenuId(null);
   };
 
-  const toggleCheckbox = (id: string, checked: boolean) => {
+  const toggleCheckbox = async (id: string, checked: boolean) => {
+    const block = blocks.find(b => b.id === id);
+    if (block?.eventId) {
+      try {
+        const { status } = await Calendar.requestCalendarPermissionsAsync();
+        if (status === 'granted') {
+          const event = await Calendar.getEventAsync(block.eventId);
+          if (event) {
+            let newTitle = event.title;
+            if (checked && !newTitle.startsWith('✅ ')) {
+              newTitle = `✅ ${newTitle}`;
+            } else if (!checked && newTitle.startsWith('✅ ')) {
+              newTitle = newTitle.replace('✅ ', '');
+            }
+            await Calendar.updateEventAsync(block.eventId, { title: newTitle });
+          }
+        }
+      } catch (e) {
+        console.error("Error actualizando evento:", e);
+      }
+    }
+
     const newBlocks = blocks.map(b => b.id === id ? { ...b, checked } : b);
     saveBlocks(newBlocks);
   };
@@ -145,6 +216,7 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
       <View style={styles.slashMenu}>
         <Text style={styles.slashMenuTitle}>Convierte este bloque a:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <TouchableOpacity style={styles.slashMenuItem} onPress={() => scheduleBlockToCalendar(blockId)}><Text>📅 Agendar Hoy</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => changeBlockType(blockId, 'checkbox')}><Text>☑ Tarea</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => changeBlockType(blockId, 'h1')}><Text>T1 Título</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => changeBlockType(blockId, 'bullet')}><Text>• Lista</Text></TouchableOpacity>
