@@ -5,9 +5,11 @@ import { EventEmitter } from 'events';
 (global as any).EventEmitter = EventEmitter;
 
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, Modal, Image } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import * as Calendar from 'expo-calendar';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 
 import PouchDB from 'pouchdb-core';
 import HttpPouch from 'pouchdb-adapter-http';
@@ -24,7 +26,9 @@ const localDB = new PouchDB(REMOTE_URL);
 function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
   const [blocks, setBlocks] = useState<any[]>([]);
   const [slashMenuId, setSlashMenuId] = useState<string | null>(null);
+  const [datePickerConfig, setDatePickerConfig] = useState<{ id: string, date: Date, mode: 'date' | 'time' } | null>(null);
   const revRef = useRef<string | undefined>(undefined);
+  const debounceTimer = useRef<any>(null);
   const docId = `axon-blocks-${page.id}`;
   
   useEffect(() => {
@@ -64,27 +68,35 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
   }, [page.id]);
 
   const saveBlocks = async (newBlocks: any[]) => {
+    // Actualización optimista de UI instantánea
     setBlocks(newBlocks);
-    try {
-      const payload: any = { _id: docId, data: newBlocks };
-      if (revRef.current) payload._rev = revRef.current;
-      
-      const res = await localDB.put(payload);
-      revRef.current = res.rev;
-    } catch (err: any) {
-      if (err.status === 409 || err.name === 'conflict') {
-        try {
-          const latestDoc = await localDB.get(docId);
-          revRef.current = latestDoc._rev;
-          const retryRes = await localDB.put({ _id: docId, _rev: revRef.current, data: newBlocks });
-          revRef.current = retryRes.rev;
-        } catch (retryErr) {
-          console.error('Error resolviendo conflicto:', retryErr);
+    
+    // Cancelar el guardado pendiente si hay uno
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    
+    // Programar el nuevo guardado para que ocurra después de que el usuario deje de teclear
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        const payload: any = { _id: docId, data: newBlocks };
+        if (revRef.current) payload._rev = revRef.current;
+        
+        const res = await localDB.put(payload);
+        revRef.current = res.rev;
+      } catch (err: any) {
+        if (err.status === 409 || err.name === 'conflict') {
+          try {
+            const latestDoc = await localDB.get(docId);
+            revRef.current = latestDoc._rev;
+            const retryRes = await localDB.put({ _id: docId, _rev: revRef.current, data: newBlocks });
+            revRef.current = retryRes.rev;
+          } catch (retryErr) {
+            console.error('Error resolviendo conflicto:', retryErr);
+          }
+        } else {
+          console.error('Error guardando bloque:', err);
         }
-      } else {
-        console.error('Error guardando bloque:', err);
       }
-    }
+    }, 400); // 400 milisegundos de espera
   };
 
   const updateBlockContent = (id: string, text: string) => {
@@ -128,7 +140,33 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
     saveBlocks(newBlocks);
   };
 
-  const scheduleBlockToCalendar = async (id: string) => {
+  const startSchedulingBlock = (id: string) => {
+    setSlashMenuId(null);
+    setDatePickerConfig({ id, date: new Date(), mode: 'date' });
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (event.type === 'dismissed') {
+      setDatePickerConfig(null);
+      return;
+    }
+    
+    const currentDate = selectedDate || datePickerConfig!.date;
+    
+    if (Platform.OS === 'android') {
+      if (datePickerConfig!.mode === 'date') {
+        setDatePickerConfig({ id: datePickerConfig!.id, date: currentDate, mode: 'time' });
+      } else {
+        setDatePickerConfig(null);
+        scheduleBlockToCalendar(datePickerConfig!.id, currentDate);
+      }
+    } else {
+      // iOS actualiza la fecha en vivo
+      setDatePickerConfig({ ...datePickerConfig!, date: currentDate });
+    }
+  };
+
+  const scheduleBlockToCalendar = async (id: string, selectedDate: Date) => {
     const block = blocks.find(b => b.id === id);
     if (!block) return;
 
@@ -140,7 +178,9 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
       }
 
       const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-      const defaultCalendar = calendars.find(c => c.allowsModifications) || calendars[0];
+      const defaultCalendar = calendars.find(c => c.isPrimary && c.allowsModifications) 
+                           || calendars.find(c => c.allowsModifications) 
+                           || calendars[0];
 
       if (!defaultCalendar) {
         alert('No tienes calendarios configurados en tu dispositivo.');
@@ -149,15 +189,14 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
 
       const cleanTitle = block.content.replace(/\/$/, '').trim() || "Nueva Tarea de Axon";
       
-      const startDate = new Date();
-      const endDate = new Date();
+      const startDate = selectedDate;
+      const endDate = new Date(selectedDate);
       endDate.setHours(startDate.getHours() + 1);
 
       const eventId = await Calendar.createEventAsync(defaultCalendar.id, {
         title: cleanTitle,
         startDate,
         endDate,
-        allDay: true,
         notes: "Creado desde Axon Workspace"
       });
 
@@ -170,10 +209,46 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
       
       saveBlocks(newBlocks);
       setSlashMenuId(null);
+      alert(`¡Agendado en tu calendario "${defaultCalendar.title}"! 📅`);
       
     } catch (err) {
       console.error("Error agendando", err);
       alert('Hubo un error al sincronizar con tu calendario.');
+    }
+  };
+
+  const takePhotoAndSaveBlock = async (id: string) => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        alert("¡Necesitamos permiso para acceder a tu cámara!");
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.5,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const base64Data = result.assets[0].base64;
+        const dataUri = `data:image/jpeg;base64,${base64Data}`;
+
+        const newBlocks = blocks.map(b => b.id === id ? { 
+          ...b, 
+          type: 'image', 
+          content: dataUri 
+        } : b);
+        
+        saveBlocks(newBlocks);
+        setSlashMenuId(null);
+      }
+    } catch (error) {
+      console.error("Error tomando la foto:", error);
+      alert("Hubo un error al tomar la foto.");
     }
   };
 
@@ -216,7 +291,8 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
       <View style={styles.slashMenu}>
         <Text style={styles.slashMenuTitle}>Convierte este bloque a:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <TouchableOpacity style={styles.slashMenuItem} onPress={() => scheduleBlockToCalendar(blockId)}><Text>📅 Agendar Hoy</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.slashMenuItem} onPress={() => takePhotoAndSaveBlock(blockId)}><Text>📸 Tomar Foto</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.slashMenuItem} onPress={() => startSchedulingBlock(blockId)}><Text>📅 Agendar</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => changeBlockType(blockId, 'checkbox')}><Text>☑ Tarea</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => changeBlockType(blockId, 'h1')}><Text>T1 Título</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => changeBlockType(blockId, 'bullet')}><Text>• Lista</Text></TouchableOpacity>
@@ -227,10 +303,8 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.editorContainer} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+    <>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack}>
           <Text style={styles.backButton}>← Volver</Text>
@@ -251,21 +325,28 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
                 </TouchableOpacity>
               )}
               {block.type === 'bullet' && <Text style={styles.bullet}>•</Text>}
-              <TextInput
-                style={[
-                  styles.blockInput,
-                  block.type === 'h1' && styles.h1,
-                  block.type === 'h2' && styles.h2,
-                  block.type === 'h3' && styles.h3,
-                  block.type === 'checkbox' && block.checked && styles.textChecked
-                ]}
-                value={block.content}
-                onChangeText={(text) => updateBlockContent(block.id, text)}
-                multiline
-                blurOnSubmit={false}
-                placeholder={block.type === 'paragraph' ? "Escribe o usa '/' para comandos" : ""}
-                placeholderTextColor="#ccc"
-              />
+              
+              {block.type === 'image' ? (
+                <View style={styles.imageBlockContainer}>
+                  <Image source={{ uri: block.content }} style={styles.blockImage} />
+                </View>
+              ) : (
+                <TextInput
+                  style={[
+                    styles.blockInput,
+                    block.type === 'h1' && styles.h1,
+                    block.type === 'h2' && styles.h2,
+                    block.type === 'h3' && styles.h3,
+                    block.type === 'checkbox' && block.checked && styles.textChecked
+                  ]}
+                  value={block.content}
+                  onChangeText={(text) => updateBlockContent(block.id, text)}
+                  multiline
+                  blurOnSubmit={false}
+                  placeholder={block.type === 'paragraph' ? "Escribe o usa '/' para comandos" : ""}
+                  placeholderTextColor="#ccc"
+                />
+              )}
             </View>
             {renderSlashMenu(block.id)}
           </View>
@@ -275,6 +356,42 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
         )}
       </ScrollView>
     </KeyboardAvoidingView>
+
+    {/* DatePicker para Android */}
+    {datePickerConfig && Platform.OS === 'android' && (
+      <DateTimePicker
+        value={datePickerConfig.date}
+        mode={datePickerConfig.mode}
+        is24Hour={true}
+        display="default"
+        onChange={handleDateChange}
+      />
+    )}
+
+    {/* DatePicker Modal para iOS */}
+    {datePickerConfig && Platform.OS === 'ios' && (
+      <Modal transparent animationType="slide">
+        <View style={styles.iosPickerContainer}>
+          <View style={styles.iosPickerPanel}>
+            <DateTimePicker
+              value={datePickerConfig.date}
+              mode="datetime"
+              display="spinner"
+              onChange={handleDateChange}
+            />
+            <TouchableOpacity style={styles.iosConfirmBtn} onPress={() => {
+              if (datePickerConfig) {
+                scheduleBlockToCalendar(datePickerConfig.id, datePickerConfig.date);
+                setDatePickerConfig(null);
+              }
+            }}>
+              <Text style={styles.iosConfirmText}>Confirmar Horario</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    )}
+    </>
   );
 }
 
@@ -515,5 +632,42 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 1,
+  },
+  iosPickerContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  iosPickerPanel: {
+    backgroundColor: '#fff',
+    paddingBottom: 40,
+    paddingTop: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+  },
+  iosConfirmBtn: {
+    backgroundColor: '#0052cc',
+    marginHorizontal: 20,
+    marginTop: 10,
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  iosConfirmText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  imageBlockContainer: {
+    flex: 1,
+    alignItems: 'center',
+    marginVertical: 10,
+    width: '100%',
+  },
+  blockImage: {
+    width: '100%',
+    height: 300,
+    borderRadius: 8,
+    resizeMode: 'contain',
   }
 });

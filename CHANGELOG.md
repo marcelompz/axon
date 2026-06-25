@@ -6,6 +6,8 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 ### Added
+- **Cámara Mágica:** Integración nativa con `expo-image-picker` para tomar fotografías directamente desde el menú Slash móvil.
+- **Sincronización Web de Fotos:** Las fotos tomadas desde el celular se comprimen (`quality: 0.5`) y se convierten a base64 para sincronizarse en tiempo real con la aplicación web en el formato de bloque `image`.
 - **Calendario Nativo:** Integración con `expo-calendar` para sincronizar bloques directamente con el calendario del dispositivo.
 - **Agendar Tareas:** Nuevo botón `📅 Agendar Hoy` en el menú Slash móvil que solicita permisos y crea eventos reales en el calendario del celular.
 - **Sincronización Bidireccional de Calendario:** Al marcar una tarea agendada como completada en la app móvil, el evento en el calendario se actualiza dinámicamente añadiendo el prefijo `✅ `.
