@@ -1,0 +1,43 @@
+{
+  "name": "axon-workspace",
+  "version": "0.1.0-alpha.1",
+  "description": "Axon Workspace - Local-First Notion Alternative",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcelompz/axon"
+  },
+  "modules": {
+    "web": {
+      "path": ".",
+      "version": "0.1.0",
+      "type": "react-vite",
+      "runtime": "node-22",
+      "port": 5173,
+      "dockerfile": "Dockerfile",
+      "outputDir": "dist"
+    },
+    "mobile": {
+      "path": "./mobile",
+      "version": "0.1.0",
+      "type": "react-native-expo",
+      "sdk": "56.0.0",
+      "platforms": [
+        "ios",
+        "android"
+      ]
+    }
+  },
+  "environments": {
+    "development": {
+      "dockerCompose": "docker-compose.yml",
+      "ports": {
+        "web": 5173,
+        "couchdb": 5984
+      }
+    },
+    "staging": {
+      "dockerCompose": "docker-compose.yml"
+    }
+  }
+}
