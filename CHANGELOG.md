@@ -6,6 +6,9 @@ y este proyecto se adhiere a [Semantic Versioning](https://semver.org/lang/es/).
 
 ## [Unreleased]
 ### Added
+- **Calendario Nativo:** Integración con `expo-calendar` para sincronizar bloques directamente con el calendario del dispositivo.
+- **Agendar Tareas:** Nuevo botón `📅 Agendar Hoy` en el menú Slash móvil que solicita permisos y crea eventos reales en el calendario del celular.
+- **Sincronización Bidireccional de Calendario:** Al marcar una tarea agendada como completada en la app móvil, el evento en el calendario se actualiza dinámicamente añadiendo el prefijo `✅ `.
 - **Menú Móvil "Slash":** Interfaz superpuesta horizontal (scroll nativo) en la app móvil que aparece al teclear `/` para cambiar rápidamente entre tipos de bloque (Títulos, Listas, Tareas).
 - **Interacción Nativa:** Las tareas (checkboxes) ahora son interactivas en el entorno móvil, pudiendo marcar/desmarcarse con retroalimentación visual inmediata.
 - **Renderizado Móvil:** Navegación bidireccional entre la lista de páginas y la edición nativa de bloques (`TextInput`) en React Native.
