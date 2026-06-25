@@ -10,6 +10,7 @@ import { useState, useEffect, useRef } from 'react';
 import * as Calendar from 'expo-calendar';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
+import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 
 import PouchDB from 'pouchdb-core';
 import HttpPouch from 'pouchdb-adapter-http';
@@ -27,6 +28,8 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
   const [blocks, setBlocks] = useState<any[]>([]);
   const [slashMenuId, setSlashMenuId] = useState<string | null>(null);
   const [datePickerConfig, setDatePickerConfig] = useState<{ id: string, date: Date, mode: 'date' | 'time' } | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceBlockId, setVoiceBlockId] = useState<string | null>(null);
   const revRef = useRef<string | undefined>(undefined);
   const debounceTimer = useRef<any>(null);
   const docId = `axon-blocks-${page.id}`;
@@ -66,6 +69,38 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
       changes.cancel();
     };
   }, [page.id]);
+
+  useSpeechRecognitionEvent('start', () => setIsListening(true));
+  useSpeechRecognitionEvent('end', () => {
+    setIsListening(false);
+    setVoiceBlockId(null);
+  });
+  useSpeechRecognitionEvent('error', (event) => {
+    console.error('Speech error:', event.error, event.message);
+    setIsListening(false);
+    setVoiceBlockId(null);
+  });
+  useSpeechRecognitionEvent('result', (event) => {
+    if (voiceBlockId) {
+      const transcript = event.results[0]?.transcript || "";
+      // Actualizamos el contenido del bloque optimísticamente
+      const newBlocks = blocks.map(b => b.id === voiceBlockId ? { ...b, content: transcript } : b);
+      setBlocks(newBlocks);
+      
+      // Cancelamos el debounce timer y disparamos el guardado de forma similar a updateBlockContent
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(async () => {
+        try {
+          const payload: any = { _id: docId, data: newBlocks };
+          if (revRef.current) payload._rev = revRef.current;
+          const res = await localDB.put(payload);
+          revRef.current = res.rev;
+        } catch (err: any) {
+          console.error('Error guardando dictado:', err);
+        }
+      }, 400);
+    }
+  });
 
   const saveBlocks = async (newBlocks: any[]) => {
     // Actualización optimista de UI instantánea
@@ -259,6 +294,32 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
     setSlashMenuId(null);
   };
 
+  const startVoiceDictation = async (id: string) => {
+    try {
+      const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!result.granted) {
+        alert("¡Necesitamos permiso para usar el micrófono!");
+        return;
+      }
+      
+      // Quitamos la barra "/" antes de dictar
+      const newBlocks = blocks.map(b => b.id === id ? { ...b, content: b.content.replace(/\/$/, '') } : b);
+      setBlocks(newBlocks);
+      
+      setVoiceBlockId(id);
+      setSlashMenuId(null);
+      
+      ExpoSpeechRecognitionModule.start({
+        lang: "es-ES",
+        interimResults: true,
+        continuous: true
+      });
+    } catch (error) {
+      console.error("Error iniciando dictado:", error);
+      alert("Hubo un error al iniciar el dictado por voz.");
+    }
+  };
+
   const toggleCheckbox = async (id: string, checked: boolean) => {
     const block = blocks.find(b => b.id === id);
     if (block?.eventId) {
@@ -291,6 +352,7 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
       <View style={styles.slashMenu}>
         <Text style={styles.slashMenuTitle}>Convierte este bloque a:</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <TouchableOpacity style={styles.slashMenuItem} onPress={() => startVoiceDictation(blockId)}><Text>🎙️ Dictar</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => takePhotoAndSaveBlock(blockId)}><Text>📸 Tomar Foto</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => startSchedulingBlock(blockId)}><Text>📅 Agendar</Text></TouchableOpacity>
           <TouchableOpacity style={styles.slashMenuItem} onPress={() => changeBlockType(blockId, 'checkbox')}><Text>☑ Tarea</Text></TouchableOpacity>
@@ -348,6 +410,14 @@ function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
                 />
               )}
             </View>
+            {isListening && voiceBlockId === block.id && (
+              <View style={styles.listeningIndicator}>
+                <Text style={styles.listeningText}>🎙️ Escuchando... (Toca para detener)</Text>
+                <TouchableOpacity onPress={() => ExpoSpeechRecognitionModule.stop()} style={styles.stopButton}>
+                  <Text style={styles.stopButtonText}>Detener</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {renderSlashMenu(block.id)}
           </View>
         ))}
@@ -669,5 +739,33 @@ const styles = StyleSheet.create({
     height: 300,
     borderRadius: 8,
     resizeMode: 'contain',
+  },
+  listeningIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ebf4ff',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+  },
+  listeningText: {
+    color: '#1d4ed8',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  stopButton: {
+    backgroundColor: '#dc2626',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  stopButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: 'bold',
   }
 });
