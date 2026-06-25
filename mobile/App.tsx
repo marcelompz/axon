@@ -256,7 +256,6 @@ export default function App() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Axon Mobile</Text>
-      <Text style={styles.status}>Estado: {syncStatus}</Text>
       
       <ScrollView style={styles.list}>
         <Text style={styles.subtitle}>Tus Páginas:</Text>
