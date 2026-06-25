@@ -9,28 +9,15 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput } from 
 import { useState, useEffect } from 'react';
 
 import PouchDB from 'pouchdb-core';
-import MemoryAdapter from 'pouchdb-adapter-memory';
 import HttpPouch from 'pouchdb-adapter-http';
-import replication from 'pouchdb-replication';
 
-PouchDB.plugin(MemoryAdapter)
-       .plugin(HttpPouch)
-       .plugin(replication);
+PouchDB.plugin(HttpPouch);
 
 // Conexión a la IP de la computadora en la red local
 const REMOTE_URL = 'http://admin:password@192.168.100.180:5984/axon';
 
-// Singleton DB instances to avoid memory leaks
-const localDB = new PouchDB('axon', { adapter: 'memory' });
-const remoteDB = new PouchDB(REMOTE_URL);
-
-// Sincronización Global
-localDB.sync(remoteDB, {
-  live: true,
-  retry: true
-}).on('error', function (err) {
-  console.log('Sync Error:', err);
-});
+// Singleton DB instance connected directly to CouchDB
+const localDB = new PouchDB(REMOTE_URL);
 
 // Componente para editar los bloques de la página
 function PageEditor({ page, onBack }: { page: any, onBack: () => void }) {
