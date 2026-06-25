@@ -1,6 +1,6 @@
 # Axon Workspace
 
-Axon es un clon *Local-First* inspirado en Notion, diseñado como un editor basado en bloques con sincronización colaborativa en tiempo real y soporte nativo para móviles.
+Axon es una plataforma de productividad *Local-First* de vanguardia, diseñada como un editor basado en bloques con sincronización colaborativa en tiempo real y soporte nativo para móviles.
 
 ## Arquitectura y Tecnologías
 - **Frontend:** React 19 + TypeScript + Vite.
